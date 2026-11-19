@@ -1,5 +1,6 @@
-"""Portfolio Analyzer: risk and return metrics for ETF and stock portfolios."""
+"""Portfolio Analyzer: risk, return, VaR and optimisation for ETF, stock and crypto portfolios."""
 
+from .analysis import Analysis, analyze, plain_english
 from .metrics import (
     annualized_return,
     annualized_volatility,
@@ -14,9 +15,12 @@ from .metrics import (
     summary,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
+    "Analysis",
+    "analyze",
+    "plain_english",
     "annualized_return",
     "annualized_volatility",
     "beta",
