@@ -2,103 +2,112 @@
 
 ![tests](https://github.com/zane-rosado/portfolio-analyzer/actions/workflows/tests.yml/badge.svg)
 
-A free, open-source Python tool that measures the **risk and return of an ETF or stock portfolio**.
-Give it tickers and weights; it pulls price history and reports the numbers investors and fund managers actually use to judge a portfolio.
+A free, open-source tool that measures the **risk and return of any stock, ETF or crypto portfolio**, finds the **max-Sharpe mix**, calculates **Value at Risk**, and exports a **PDF report**, all from a simple web page.
 
 ![Growth of $10,000 and drawdown chart](examples/sample_chart.png)
-*Example output using the synthetic data in `examples/sample_prices.csv`.*
 
-## What it calculates
+*Example output using the synthetic data in `examples/sample_prices.csv`. See the full [sample PDF report](examples/sample_report.pdf).*
 
-| Metric | What it tells you |
+## Features
+
+| | What you get |
 |---|---|
-| **Annual return (CAGR)** | Compound yearly growth rate |
-| **Volatility** | Annualised standard deviation of daily returns |
-| **Sharpe ratio** | Return earned per unit of total risk, above the risk-free rate |
-| **Sortino ratio** | Like Sharpe, but only penalises downside moves |
-| **Max drawdown** | Worst peak-to-trough loss |
-| **Beta** | Sensitivity to a benchmark (e.g. VOO for the S&P 500) |
-| **Correlation matrix** | How much the holdings move together (diversification) |
+| **Plain-English summary** | A few sentences at the top that explain the results to anyone |
+| **Return & risk** | Annual return (CAGR), volatility, Sharpe, Sortino, max drawdown, beta, Calmar |
+| **Value at Risk** | 1-day and 1-month historical VaR, CVaR (expected shortfall), parametric VaR, in % and $ |
+| **Optimizer** | Max-Sharpe and minimum-volatility weights (long-only), with an optional cap per asset |
+| **Efficient frontier** | Thousands of possible mixes plotted, with your portfolio and the optimal ones marked |
+| **Crypto** | BTC, ETH, XRP, SOL, BNB, ADA, DOGE, AVAX, LINK, LTC built in, mixed correctly with stocks |
+| **PDF report** | One click: summary, all tables and all charts, ready to print or email |
+| **Presets** | Vanguard core 60/30/10, classic 60/40, three-fund, crypto majors, stocks + 10% crypto |
 
-The portfolio is modelled as rebalanced daily to fixed, long-only weights.
+![Efficient frontier](examples/sample_frontier.png)
 
-## Quick start
-
-```bash
-git clone https://github.com/zane-rosado/portfolio-analyzer.git
-cd portfolio-analyzer
-pip install -r requirements.txt
-```
-
-**Command line**
+## Quick start (Windows)
 
 ```bash
-python -m portfolio_analyzer.cli VOO VXUS BND --weights 0.6 0.3 0.1 \
-    --start 2021-01-01 --rf 0.04 --benchmark VOO --plot
+py -m pip install -r requirements.txt
+py -m streamlit run app.py
 ```
 
-**Web app**
+The app opens in your browser. Pick a preset or your own assets, set weights, and press **Analyze**.
+
+### Command line
 
 ```bash
-streamlit run app.py
+py -m portfolio_analyzer.cli VOO VXUS BND --weights 0.6 0.3 0.1 --benchmark VOO
+py -m portfolio_analyzer.cli --preset "Crypto majors" --pdf crypto_report.pdf
+py -m portfolio_analyzer.cli VOO BND BTC-USD --max-weight 0.5 --var-level 0.99
 ```
 
-**Offline (no internet needed)**
+Run `py -m portfolio_analyzer.cli --help` to see every option.
 
-```bash
-python -m portfolio_analyzer.cli --csv examples/sample_prices.csv --weights 0.6 0.3 0.1
-```
-
-**As a library**
+### As a Python library
 
 ```python
-from portfolio_analyzer import metrics
+from portfolio_analyzer import analyze, plain_english
 from portfolio_analyzer.data import fetch_prices
+from portfolio_analyzer.report import build_pdf
 
-prices = fetch_prices(["VOO", "BND"], start="2021-01-01")
-returns = metrics.daily_returns(prices)
-port = metrics.portfolio_returns(returns, {"VOO": 0.7, "BND": 0.3})
-print(metrics.sharpe_ratio(port, risk_free=0.04))
+prices = fetch_prices(["VOO", "BND", "BTC-USD"], start="2021-01-01")
+a = analyze(prices, {"VOO": 0.6, "BND": 0.3, "BTC-USD": 0.1}, risk_free=0.04)
+print("\n".join(plain_english(a)))
+print(a.optimal)          # your weights vs. max Sharpe vs. min volatility
+open("report.pdf", "wb").write(build_pdf(a))
 ```
+
+## How crypto is handled
+
+- Yahoo Finance crypto tickers end in **-USD** (e.g. `BTC-USD`, `SOL-USD`). Typing a full name such as `solana` also works.
+- Crypto trades 7 days a week and stocks 5. **Crypto-only** portfolios are annualised with 365 days; **mixed** portfolios use stock-market days only (weekend crypto moves land in Monday's return), annualised with 252.
+- If one asset has a shorter history (e.g. a newer coin), the whole analysis starts on its first day so every number covers the same period.
 
 ## Formulas
 
-- Daily excess return: `r_t − rf / 252`
-- Sharpe: `mean(excess) / std(excess) × √252`
-- Sortino: `mean(excess) / downside_deviation × √252`
-- Max drawdown: `min(wealth_t / max(wealth_0..t) − 1)`
+- Daily excess return: `r − rf / N` where `N` = 252 (stocks/mixed) or 365 (crypto only)
+- Sharpe: `mean(excess) / std(excess) × √N`
+- Sortino: `mean(excess) / downside deviation × √N`
+- Max drawdown: `min(wealth_t / peak_t − 1)`
 - Beta: `cov(r, r_benchmark) / var(r_benchmark)`
+- Historical VaR (95%): the 5th-percentile daily loss; CVaR = average loss beyond it; multi-day = `VaR × √days`
+- Max Sharpe: maximise `(w·μ − rf) / √(wᵀΣw)` subject to `Σw = 1`, `0 ≤ w ≤ cap` (SciPy SLSQP)
 
 ## Project layout
 
 ```
 portfolio_analyzer/
-  metrics.py   # all calculations (pure functions, fully tested)
-  data.py      # Yahoo Finance download + CSV loader
-  plots.py     # growth-of-$10k and drawdown charts
-  cli.py       # command-line interface
-app.py         # Streamlit web app
-tests/         # pytest suite, run automatically by GitHub Actions
-examples/      # sample data and chart
+  analysis.py   # analyze(): runs everything; used by the app, CLI and PDF
+  metrics.py    # return & risk-adjusted metrics
+  risk.py       # VaR, CVaR
+  optimize.py   # max-Sharpe, min-volatility, efficient frontier
+  data.py       # Yahoo Finance download, CSV loader, stock/crypto date alignment
+  universe.py   # ticker list and presets (add a line to add an asset)
+  plots.py      # all charts
+  report.py     # PDF report
+  cli.py        # command line
+app.py          # Streamlit web app
+tests/          # 29 tests, run automatically on every change by GitHub Actions
 ```
+
+**Adding things:** new asset to the picker: one line in `universe.CATALOG`. New preset: one entry in `universe.PRESETS`. New metric: add it in `analysis.analyze()` and it appears in the app, CLI and PDF.
 
 ## Roadmap
 
 - [ ] Rebalancing frequency options (monthly, quarterly, none)
-- [ ] Rolling Sharpe and rolling volatility charts
-- [ ] Value at Risk (VaR) and Conditional VaR
-- [ ] Mean-variance optimiser (max-Sharpe and min-volatility weights)
-- [ ] Export a one-page PDF report
+- [ ] Monte Carlo simulation of future portfolio value
+- [ ] Stress tests (2008, 2020, 2022 drawdowns)
+- [ ] Factor exposure (market, size, value)
+- [ ] Hosted version on Streamlit Community Cloud
 
 ## Running tests
 
 ```bash
-pytest -q
+py -m pytest -q
 ```
 
 ## Disclaimer
 
-For education and research only. This is not investment advice. Price data comes from Yahoo Finance via `yfinance` and may contain errors.
+For education and research only. This is not investment advice. Optimised weights describe what worked best in the past, not what will work in the future. Price data comes from Yahoo Finance via `yfinance` and may contain errors.
 
 ## License
 
