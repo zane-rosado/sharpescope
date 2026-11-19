@@ -15,5 +15,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install pandas numpy matplotlib pytest
+      - run: pip install pandas numpy scipy matplotlib pytest
       - run: pytest -q
