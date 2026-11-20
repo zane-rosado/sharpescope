@@ -127,7 +127,7 @@ def test_analyze_and_pdf():
     assert a.optimal["Max Sharpe"].max() <= 0.6 + 1e-6
     assert a.optimal_stats.loc["Max Sharpe", "Sharpe"] >= a.optimal_stats.loc["Your weights", "Sharpe"] - 1e-9
     lines = plain_english(a)
-    assert len(lines) == 5 and "Sharpe" in lines[1]
+    assert len(lines) == 6 and any("Sharpe ratio" in l for l in lines)
     pdf = build_pdf(a)
     assert pdf[:4] == b"%PDF" and len(pdf) > 20_000
 
@@ -137,3 +137,48 @@ def test_single_asset_has_no_optimizer():
     a = analyze(_prices(["VOO"], idx), {"VOO": 1.0}, frontier_points=100)
     assert a.frontier is None
     assert build_pdf(a)[:4] == b"%PDF"
+
+
+# ---------- Rebalancing ----------
+def test_buy_and_hold_matches_share_math():
+    idx = pd.bdate_range("2024-01-01", periods=250)
+    prices = _prices(["A", "B", "C"], idx, seed=7)
+    w = {"A": 0.5, "B": 0.3, "C": 0.2}
+    # buy shares on day 0, never trade
+    shares = {t: w[t] / prices[t].iloc[0] for t in w}
+    value = sum(prices[t] * shares[t] for t in w)
+    port = metrics.portfolio_returns(metrics.daily_returns(prices), w, rebalance="none")
+    assert (1 + port).prod() - 1 == pytest.approx(value.iloc[-1] / value.iloc[0] - 1)
+
+
+def test_daily_and_buy_and_hold_differ_but_monthly_in_between_resets():
+    idx = pd.bdate_range("2024-01-01", periods=250)
+    r = metrics.daily_returns(_prices(["A", "B"], idx, seed=9))
+    w = {"A": 0.5, "B": 0.5}
+    daily = metrics.portfolio_returns(r, w, "daily")
+    monthly = metrics.portfolio_returns(r, w, "monthly")
+    hold = metrics.portfolio_returns(r, w, "none")
+    # on the first trading day of a month, monthly rebalancing equals daily rebalancing
+    first_days = r.index.to_series().groupby(r.index.to_period("M")).first().iloc[1:]
+    assert np.allclose(monthly[first_days], daily[first_days])
+    assert not np.allclose(hold, daily)
+
+
+def test_weights_drift_under_buy_and_hold():
+    idx = pd.bdate_range("2024-01-01", periods=100)
+    r = metrics.daily_returns(_prices(["A", "B"], idx, seed=2))
+    drift = metrics.weights_over_time(r, {"A": 0.5, "B": 0.5}, "none")
+    assert drift.iloc[-1].sum() == pytest.approx(1)
+    assert drift.iloc[-1]["A"] != pytest.approx(0.5)
+
+
+def test_analyze_date_range_and_benchmark_row():
+    idx = pd.bdate_range("2024-01-01", periods=300)
+    prices = _prices(["A", "B", "IVV"], idx, seed=5)
+    a = analyze(prices, {"A": 0.6, "B": 0.4}, benchmark="IVV", rebalance="none",
+                start="2024-03-01", end="2024-10-31", frontier_points=100)
+    assert "IVV (benchmark)" in a.summary.index
+    assert a.prices.index.min() >= pd.Timestamp("2024-03-01")
+    assert a.prices.index.max() <= pd.Timestamp("2024-10-31")
+    assert a.current_weights is not None
+    assert any("beat" in l or "trailed" in l for l in plain_english(a))
