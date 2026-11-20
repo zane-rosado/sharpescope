@@ -24,12 +24,14 @@ class Analysis:
     value: float
     var_level: float
     benchmark: str | None
+    rebalance: str
     summary: pd.DataFrame          # return/risk table, one row per asset + Portfolio
     risk: pd.DataFrame             # VaR table
     correlation: pd.DataFrame
     optimal: pd.DataFrame          # columns: Your weights, Max Sharpe, Min Volatility
     optimal_stats: pd.DataFrame    # Return/Volatility/Sharpe for each weight set
     frontier: pd.DataFrame | None
+    current_weights: pd.Series | None = None   # where weights drifted to (buy & hold / periodic)
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -58,20 +60,44 @@ def analyze(
     var_level: float = 0.95,
     max_weight: float = 1.0,
     frontier_points: int = 4000,
+    rebalance: str = "daily",
+    start: str | None = None,
+    end: str | None = None,
 ) -> Analysis:
-    """Run every calculation for a portfolio. `prices` must include the benchmark if given."""
-    prices, periods, notes = align_prices(prices)
+    """Run every calculation for a portfolio. `prices` must include the benchmark if given.
+
+    `start`/`end` (YYYY-MM-DD, inclusive) trim the prices. Returns are measured from the
+    close on the first day, so start on the day you bought.
+    """
+    prices = prices.sort_index()
+    if start:
+        prices = prices.loc[pd.Timestamp(start):]
+    if end:
+        prices = prices.loc[: pd.Timestamp(end)]
+    keep = list(dict.fromkeys(list(weights) + ([benchmark] if benchmark else [])))
+    missing = [t for t in keep if t not in prices.columns]
+    if missing:
+        raise ValueError(f"No price data for: {', '.join(missing)}")
+    prices, periods, notes = align_prices(prices[keep])
     asset_rets = metrics.daily_returns(prices)
     w = metrics.normalize_weights(weights, asset_rets.columns)
     assets = list(w.index)
 
-    port = metrics.portfolio_returns(asset_rets[assets], w.to_dict())
-    rets = pd.concat([asset_rets[assets], port], axis=1)
+    port = metrics.portfolio_returns(asset_rets[assets], w.to_dict(), rebalance)
     bench = asset_rets[benchmark] if benchmark and benchmark in asset_rets else None
+    cols = [asset_rets[assets], port]
+    if bench is not None and benchmark not in assets:
+        cols.append(bench.rename(f"{benchmark} (benchmark)"))
+    rets = pd.concat(cols, axis=1)
 
     table = metrics.summary(rets, risk_free, bench, periods)
     table["Calmar"] = [metrics.calmar_ratio(rets[c], periods) for c in rets.columns]
     risk_tbl = risk.risk_table(rets, var_level, value)
+    if rebalance != "daily":
+        notes.append({"none": "Buy and hold: bought once at the start, no rebalancing (like a brokerage account).",
+                      "monthly": "Rebalanced back to your weights at the start of every month.",
+                      "quarterly": "Rebalanced back to your weights at the start of every quarter.",
+                      "yearly": "Rebalanced back to your weights at the start of every year."}[rebalance])
 
     if len(assets) >= 2:
         ms = optimize.max_sharpe(asset_rets[assets], risk_free, periods, max_weight)
@@ -91,8 +117,11 @@ def analyze(
     return Analysis(
         prices=prices, returns=rets, weights=w, periods=periods, risk_free=risk_free,
         value=value, var_level=var_level, benchmark=benchmark if bench is not None else None,
+        rebalance=rebalance,
         summary=table, risk=risk_tbl, correlation=metrics.correlation_matrix(asset_rets[assets]),
         optimal=optimal, optimal_stats=optimal_stats, frontier=frontier, notes=notes,
+        current_weights=None if rebalance == "daily" else
+        metrics.weights_over_time(asset_rets[assets], w.to_dict(), rebalance).iloc[-1].rename("Current weight"),
     )
 
 
@@ -126,6 +155,12 @@ def plain_english(a: Analysis) -> list[str]:
         f"Value at Risk ({level}%): on about 1 day in {odds}, expect to lose more than "
         f"{r['1-Day VaR']:.2%} (${r['1-Day VaR ($)']:,.0f} on ${a.value:,.0f}).",
     ]
+    bench_row = f"{a.benchmark} (benchmark)" if a.benchmark and a.benchmark not in a.assets else a.benchmark
+    if bench_row and bench_row in a.summary.index:
+        b = a.summary.loc[bench_row]
+        diff = p["Total Return"] - b["Total Return"]
+        lines.insert(1, f"Total return {p['Total Return']:.2%} vs {b['Total Return']:.2%} for {a.benchmark}: "
+                        f"you {'beat' if diff >= 0 else 'trailed'} the benchmark by {abs(diff) * 100:.2f} percentage points.")
     if "Max Sharpe" in a.optimal:
         best = a.optimal["Max Sharpe"]
         top = best[best > 0.005].sort_values(ascending=False)
@@ -133,6 +168,7 @@ def plain_english(a: Analysis) -> list[str]:
         lines.append(
             f"The max-Sharpe mix over this period would have been {mix}, with a Sharpe of "
             f"{a.optimal_stats.loc['Max Sharpe', 'Sharpe']:.2f} vs. "
-            f"{a.optimal_stats.loc['Your weights', 'Sharpe']:.2f} for yours (based on past data, not a forecast)."
+            f"{a.optimal_stats.loc['Your weights', 'Sharpe']:.2f} for your weights, both held fixed with daily "
+            f"rebalancing (based on past data, not a forecast)."
         )
     return lines

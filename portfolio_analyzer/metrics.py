@@ -33,15 +33,61 @@ def normalize_weights(weights: dict[str, float], columns) -> pd.Series:
     return w / w.sum()
 
 
-def portfolio_returns(returns: pd.DataFrame, weights: dict[str, float] | None = None) -> pd.Series:
-    """Daily returns of a portfolio rebalanced daily to fixed weights.
+REBALANCE_OPTIONS = ("daily", "monthly", "quarterly", "yearly", "none")
+_FREQ = {"monthly": "M", "quarterly": "Q", "yearly": "Y"}
 
+
+def portfolio_returns(returns: pd.DataFrame, weights: dict[str, float] | None = None,
+                      rebalance: str = "daily") -> pd.Series:
+    """Daily returns of a portfolio.
+
+    rebalance:
+      * "daily"     - weights reset to target every day (the textbook assumption)
+      * "monthly" / "quarterly" / "yearly" - reset on the first trading day of each period
+      * "none"      - buy and hold: buy once at the start, then let winners grow
+                      (this is how a brokerage or Bloomberg "shares" portfolio behaves)
     With no weights, every column gets an equal weight.
     """
     if weights is None:
         weights = {t: 1.0 for t in returns.columns}
+    if rebalance not in REBALANCE_OPTIONS:
+        raise ValueError(f"rebalance must be one of {REBALANCE_OPTIONS}")
     w = normalize_weights(weights, returns.columns)
-    return returns[w.index].dot(w).rename("Portfolio")
+    r = returns[w.index]
+    if rebalance == "daily":
+        return r.dot(w).rename("Portfolio")
+
+    growth = (1 + r.fillna(0)).values
+    target = w.values
+    if rebalance == "none":
+        period = np.zeros(len(r), dtype=int)
+    else:
+        period = r.index.to_period(_FREQ[rebalance]).asi8
+    holdings = target.copy()          # value of each position, starting from $1 total
+    out = np.empty(len(r))
+    for i in range(len(r)):
+        if i > 0 and period[i] != period[i - 1]:
+            holdings = holdings.sum() * target   # rebalance at the previous close
+        before = holdings.sum()
+        holdings = holdings * growth[i]
+        out[i] = holdings.sum() / before - 1
+    return pd.Series(out, index=r.index, name="Portfolio")
+
+
+def weights_over_time(returns: pd.DataFrame, weights: dict[str, float], rebalance: str = "none") -> pd.DataFrame:
+    """How each position's share of the portfolio drifts (useful for buy-and-hold)."""
+    w = normalize_weights(weights, returns.columns)
+    r = returns[w.index].fillna(0)
+    if rebalance == "daily":
+        return pd.DataFrame([w.values] * len(r), index=r.index, columns=w.index)
+    period = np.zeros(len(r), dtype=int) if rebalance == "none" else r.index.to_period(_FREQ[rebalance]).asi8
+    holdings, rows = w.values.copy(), []
+    for i, g in enumerate((1 + r).values):
+        if i > 0 and period[i] != period[i - 1]:
+            holdings = holdings.sum() * w.values
+        holdings = holdings * g
+        rows.append(holdings / holdings.sum())
+    return pd.DataFrame(rows, index=r.index, columns=w.index)
 
 
 def annualized_return(returns: pd.Series, periods: int = TRADING_DAYS) -> float:
@@ -139,6 +185,7 @@ def summary(
     for col in returns.columns:
         r = returns[col].dropna()
         row = {
+            "Total Return": total_return(r),
             "Annual Return": annualized_return(r, periods),
             "Volatility": annualized_volatility(r, periods),
             "Sharpe": sharpe_ratio(r, risk_free, periods),

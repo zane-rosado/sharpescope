@@ -31,6 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--value", type=float, default=10_000, help="Portfolio value in $ (for VaR)")
     p.add_argument("--var-level", type=float, default=0.95, help="VaR confidence, e.g. 0.95 or 0.99")
     p.add_argument("--max-weight", type=float, default=1.0, help="Optimiser cap per asset, e.g. 0.4")
+    p.add_argument("--rebalance", default="daily", choices=["daily", "monthly", "quarterly", "yearly", "none"],
+                   help="How often weights reset; 'none' = buy and hold")
     p.add_argument("--csv", default=None, help="Load prices from a CSV instead of downloading")
     p.add_argument("--pdf", default=None, help="Save a PDF report to this file")
     p.add_argument("--plot", action="store_true", help="Save and open a growth/drawdown chart")
@@ -65,7 +67,8 @@ def run(args: argparse.Namespace):
         if not tickers:
             raise SystemExit("Give at least one ticker, use --preset, or use --csv.")
         bench = [clean_ticker(args.benchmark)] if args.benchmark else []
-        prices = fetch_prices(list(dict.fromkeys(tickers + bench)), args.start, args.end)
+        end = (pd.Timestamp(args.end) + pd.Timedelta(days=1)).strftime("%Y-%m-%d") if args.end else None
+        prices = fetch_prices(list(dict.fromkeys(tickers + bench)), args.start, end)
 
     if weights is None:
         if args.weights:
@@ -76,14 +79,15 @@ def run(args: argparse.Namespace):
             weights = {t: 1.0 for t in tickers}
 
     a = analyze(prices, weights, args.rf, clean_ticker(args.benchmark) if args.benchmark else None,
-                args.value, args.var_level, args.max_weight)
+                args.value, args.var_level, args.max_weight, rebalance=args.rebalance,
+                start=args.start, end=args.end)
 
     print("\nSUMMARY")
     print("=======")
     for line in plain_english(a) + a.notes:
         print(f"* {line}")
 
-    _print("Return & risk", a.summary, pct=("Annual Return", "Volatility", "Max Drawdown"),
+    _print("Return & risk", a.summary, pct=("Total Return", "Annual Return", "Volatility", "Max Drawdown"),
            num=("Sharpe", "Sortino", "Beta", "Calmar"))
     _print(f"Value at Risk ({a.var_level:.0%})", a.risk,
            pct=("1-Day VaR", "1-Day CVaR", "1-Month VaR", "Parametric 1-Day VaR"), money=("1-Day VaR ($)",))

@@ -27,17 +27,27 @@ def _lw(col: str) -> float:
     return 2.4 if col == "Portfolio" else 1.1
 
 
-def growth_and_drawdown(returns: pd.DataFrame, value: float = 10_000):
+def growth_and_drawdown(returns: pd.DataFrame, value: float = 10_000, max_assets: int = 8):
+    """Growth of $value and drawdowns. With many assets, only the portfolio and benchmark are drawn."""
+    cols = list(returns.columns)
+    special = [c for c in cols if c == "Portfolio" or c.endswith("(benchmark)")]
+    if len(cols) - len(special) > max_assets:
+        cols = special
     with plt.rc_context(STYLE):
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 5.5), sharex=True, height_ratios=[2, 1])
-        growth = value * (1 + returns.fillna(0)).cumprod()
-        for i, col in enumerate(growth.columns):
-            kw = {"color": PORTFOLIO_COLOR if col == "Portfolio" else ASSET_COLORS[i % len(ASSET_COLORS)]}
+        growth = value * (1 + returns[cols].fillna(0)).cumprod()
+        for i, col in enumerate(cols):
+            if col == "Portfolio":
+                kw = {"color": PORTFOLIO_COLOR}
+            elif col.endswith("(benchmark)"):
+                kw = {"color": "black", "linestyle": "--"}
+            else:
+                kw = {"color": ASSET_COLORS[i % len(ASSET_COLORS)]}
             ax1.plot(growth.index, growth[col], label=col, linewidth=_lw(col), **kw)
             ax2.plot(returns.index, drawdown_series(returns[col].fillna(0)), linewidth=_lw(col), **kw)
         ax1.set_title(f"Growth of ${value:,.0f}")
         ax1.yaxis.set_major_formatter(mtick.StrMethodFormatter("${x:,.0f}"))
-        ax1.legend(frameon=False, ncol=min(len(growth.columns), 5), loc="upper left")
+        ax1.legend(frameon=False, ncol=min(len(cols), 5), loc="upper left")
         ax2.set_title("Drawdown (% below previous peak)")
         ax2.yaxis.set_major_formatter(mtick.PercentFormatter(1.0, decimals=0))
         fig.tight_layout()

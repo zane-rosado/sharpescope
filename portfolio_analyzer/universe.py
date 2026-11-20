@@ -17,6 +17,34 @@ CATALOG: dict[str, tuple[str, str]] = {
     "VB": ("Vanguard Small-Cap ETF", "Stock ETF"),
     "VIG": ("Vanguard Dividend Appreciation ETF", "Stock ETF"),
     "VYM": ("Vanguard High Dividend Yield ETF", "Stock ETF"),
+    "IVV": ("iShares Core S&P 500 ETF", "Stock ETF"),
+    # Sector ETFs
+    "XLV": ("Health Care Select Sector SPDR", "Sector ETF"),
+    "XLI": ("Industrial Select Sector SPDR", "Sector ETF"),
+    "XLE": ("Energy Select Sector SPDR", "Sector ETF"),
+    "XLK": ("Technology Select Sector SPDR", "Sector ETF"),
+    "XLF": ("Financial Select Sector SPDR", "Sector ETF"),
+    # Individual stocks
+    "CAH": ("Cardinal Health", "Stock"),
+    "BMY": ("Bristol-Myers Squibb", "Stock"),
+    "JNJ": ("Johnson & Johnson", "Stock"),
+    "EW": ("Edwards Lifesciences", "Stock"),
+    "VRTX": ("Vertex Pharmaceuticals", "Stock"),
+    "GD": ("General Dynamics", "Stock"),
+    "UBER": ("Uber Technologies", "Stock"),
+    "FIX": ("Comfort Systems USA", "Stock"),
+    "FAST": ("Fastenal", "Stock"),
+    "CTAS": ("Cintas", "Stock"),
+    "EOG": ("EOG Resources", "Stock"),
+    "COP": ("ConocoPhillips", "Stock"),
+    "CVX": ("Chevron", "Stock"),
+    "VLO": ("Valero Energy", "Stock"),
+    "MPC": ("Marathon Petroleum", "Stock"),
+    "ADBE": ("Adobe", "Stock"),
+    "SNDK": ("SanDisk", "Stock"),
+    "MU": ("Micron Technology", "Stock"),
+    "INTU": ("Intuit", "Stock"),
+    "CSCO": ("Cisco Systems", "Stock"),
     # International
     "VXUS": ("Vanguard Total International Stock ETF", "International ETF"),
     "VEA": ("Vanguard Developed Markets ETF", "International ETF"),
@@ -50,6 +78,20 @@ PRESETS: dict[str, dict[str, float]] = {
     "Three-fund (40/20/40)": {"VTI": 0.4, "VXUS": 0.2, "BND": 0.4},
     "Crypto majors": {"BTC-USD": 0.5, "ETH-USD": 0.2, "SOL-USD": 0.1, "XRP-USD": 0.1, "BNB-USD": 0.1},
     "Stocks + 10% crypto": {"VOO": 0.5, "VXUS": 0.2, "BND": 0.2, "BTC-USD": 0.07, "ETH-USD": 0.03},
+}
+
+PRESETS["SMIF_ZR - Project 2 stocks"] = {
+    **{t: 0.101707 for t in ("CAH", "BMY", "JNJ", "EW", "VRTX")},   # Health Care 50.85%
+    **{t: 0.040295 for t in ("GD", "UBER", "FIX", "FAST", "CTAS")},  # Industrials 20.15%
+    **{t: 0.036998 for t in ("EOG", "COP", "CVX", "VLO", "MPC")},    # Energy 18.50%
+    **{t: 0.021000 for t in ("ADBE", "SNDK", "MU", "INTU", "CSCO")},  # Info Tech 10.50%
+}
+PRESETS["SMIF TARGET - sector policy"] = {"XLV": 0.5085, "XLI": 0.2015, "XLE": 0.1850, "XLK": 0.1050}
+
+# Suggested settings that load with a preset (start date, rebalancing, benchmark)
+PRESET_SETTINGS: dict[str, dict] = {
+    "SMIF_ZR - Project 2 stocks": {"start": "2025-12-31", "rebalance": "none", "benchmark": "IVV"},
+    "SMIF TARGET - sector policy": {"start": "2025-12-31", "rebalance": "daily", "benchmark": "IVV"},
 }
 
 # Friendly names people type, mapped to Yahoo tickers. Short coin codes such as

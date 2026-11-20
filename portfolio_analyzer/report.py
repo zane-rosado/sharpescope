@@ -78,7 +78,9 @@ def build_pdf(a: Analysis) -> bytes:
     buf = io.BytesIO()
     # parse_math=False stops matplotlib reading "$122 ... $10,000" as a math formula
     with plt.rc_context({"text.parse_math": False}), PdfPages(buf) as pdf:
-        # ---- Page 1: summary + tables ----
+        # ---- Page 1+: summary, then tables flowing onto new pages as needed ----
+        footer = ("For education only. Not investment advice. Past performance does not "
+                  "predict future results.")
         page = plt.figure(figsize=PAGE)
         page.text(0.06, 0.955, "Portfolio Analysis Report", fontsize=20, fontweight="bold")
         page.text(0.06, 0.93, f"Generated {date.today():%B %d, %Y}  |  Data: Yahoo Finance (adjusted close)  |  "
@@ -93,27 +95,34 @@ def build_pdf(a: Analysis) -> bytes:
                 y -= 0.018
             y -= 0.004
 
-        top = y - 0.01
-        s = _fmt_table(a.summary, pct_cols=("Annual Return", "Volatility", "Max Drawdown"),
-                       num_cols=("Sharpe", "Sortino", "Beta", "Calmar"))
-        h1 = 0.03 * (len(s) + 2)
-        _draw_table(page.add_axes([0.14, top - h1, 0.8, h1]), s, "Return & risk")
-
-        top = top - h1 - 0.04
-        r = _fmt_table(a.risk, pct_cols=("1-Day VaR", "1-Day CVaR", "1-Month VaR", "Parametric 1-Day VaR"),
-                       money_cols=("1-Day VaR ($)",))
-        h2 = 0.03 * (len(r) + 2)
-        _draw_table(page.add_axes([0.14, top - h2, 0.8, h2]), r,
-                    f"Value at Risk ({a.var_level:.0%} confidence, ${a.value:,.0f} portfolio)")
-
-        top = top - h2 - 0.04
+        tables = [
+            ("Return & risk", _fmt_table(a.summary, pct_cols=("Total Return", "Annual Return", "Volatility", "Max Drawdown"),
+                                         num_cols=("Sharpe", "Sortino", "Beta", "Calmar"))),
+            (f"Value at Risk ({a.var_level:.0%} confidence, ${a.value:,.0f} portfolio)",
+             _fmt_table(a.risk, pct_cols=("1-Day VaR", "1-Day CVaR", "1-Month VaR", "Parametric 1-Day VaR"),
+                        money_cols=("1-Day VaR ($)",))),
+        ]
         if "Max Sharpe" in a.optimal:
-            o = _fmt_table(a.optimal, pct_cols=tuple(a.optimal.columns))
-            h3 = 0.03 * (len(o) + 2)
-            _draw_table(page.add_axes([0.14, top - h3, 0.8, h3]), o, "Weights: yours vs. optimised")
+            opt = a.optimal.copy()
+            if a.current_weights is not None:
+                opt.insert(1, "Weight now (drifted)", a.current_weights)
+            tables.append(("Weights: yours vs. optimised (optimised = fixed weights, rebalanced daily)",
+                           _fmt_table(opt, pct_cols=tuple(opt.columns))))
 
-        page.text(0.06, 0.03, "For education only. Not investment advice. Past performance does not "
-                  "predict future results.", fontsize=7, color="#777777")
+        top = y - 0.01
+        row_h = 0.03 if max(len(t) for _, t in tables) <= 8 else 0.022
+        font = 8 if row_h == 0.03 else 7
+        for title, tbl in tables:
+            h = row_h * (len(tbl) + 2)
+            if top - h < 0.06:                      # doesn't fit: start a new page
+                page.text(0.06, 0.03, footer, fontsize=7, color="#777777")
+                pdf.savefig(page)
+                plt.close(page)
+                page = plt.figure(figsize=PAGE)
+                top = 0.95
+            _draw_table(page.add_axes([0.2, top - h, 0.76, h]), tbl, title, font=font)
+            top -= h + 0.045
+        page.text(0.06, 0.03, footer, fontsize=7, color="#777777")
         pdf.savefig(page)
         plt.close(page)
 
