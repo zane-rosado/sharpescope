@@ -3,8 +3,12 @@
 ![tests](https://github.com/zane-rosado/sharpescope/actions/workflows/tests.yml/badge.svg)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://sharpescope.streamlit.app/)
 
 **Portfolio risk, stress tests, Monte Carlo and optimization for stocks, ETFs and crypto. Built for quants, made to teach.**
+
+### 🚀 [Try it live: sharpescope.streamlit.app](https://sharpescope.streamlit.app/)
+No install, no sign-up. Pick a portfolio and press **Analyze**. Questions or ideas? Join the [Discussions](https://github.com/zane-rosado/sharpescope/discussions).
 
 Free and open source. Point-and-click web app, no coding needed. Every number comes with a plain-English explanation, so it works as a professional tool *and* a learning tool.
 
@@ -101,11 +105,10 @@ tests/          # 49 tests, run automatically on every change
 
 ## Feedback
 
-Have an idea? Use the **Feedback** section at the bottom of the app or [open an issue](https://github.com/zane-rosado/sharpescope/issues/new/choose).
+Have an idea? Use the **Feedback** section at the bottom of the [app](https://sharpescope.streamlit.app/), start a [Discussion](https://github.com/zane-rosado/sharpescope/discussions), or [open an issue](https://github.com/zane-rosado/sharpescope/issues/new/choose).
 
 ## Roadmap
 
-- [ ] Hosted version on Streamlit Community Cloud
 - [ ] Interactive (hover) charts
 - [ ] Upload a brokerage CSV
 - [ ] Factor exposure (size, value, momentum)
