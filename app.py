@@ -12,7 +12,10 @@ from portfolio_analyzer import plots
 from portfolio_analyzer.analysis import analyze, plain_english
 from portfolio_analyzer.data import fetch_prices
 from portfolio_analyzer.report import build_pdf
-from portfolio_analyzer.universe import CATALOG, PRESETS, clean_ticker, label, name_of
+from portfolio_analyzer.universe import CATALOG, PRESET_SETTINGS, PRESETS, clean_ticker, label, name_of
+
+REBALANCE = {"daily": "Daily (fixed weights)", "monthly": "Monthly", "quarterly": "Quarterly",
+             "yearly": "Yearly", "none": "Never (buy and hold)"}
 
 st.set_page_config(page_title="Portfolio Analyzer", page_icon="📈", layout="wide")
 
@@ -22,16 +25,19 @@ NUM = "{:.2f}"
 
 # ----------------------------------------------------------------- cached work
 @st.cache_data(ttl=900, show_spinner=False)  # re-download prices at most every 15 min
-def load_prices(tickers: tuple[str, ...], start: str) -> pd.DataFrame:
-    return fetch_prices(list(tickers), start)
+def load_prices(tickers: tuple[str, ...], start: str, end: str | None = None) -> pd.DataFrame:
+    # Yahoo's end date is exclusive, so ask for one extra day
+    end_excl = (pd.Timestamp(end) + pd.Timedelta(days=1)).strftime("%Y-%m-%d") if end else None
+    return fetch_prices(list(tickers), start, end_excl)
 
 
 @st.cache_data(show_spinner=False)
 def run_analysis(params: dict):
     download = list(dict.fromkeys(list(params["weights"]) + ([params["benchmark"]] if params["benchmark"] else [])))
-    prices = load_prices(tuple(download), params["start"])
+    prices = load_prices(tuple(download), params["start"], params["end"])
     return analyze(prices, params["weights"], params["rf"], params["benchmark"],
-                   params["value"], params["var_level"], params["max_weight"])
+                   params["value"], params["var_level"], params["max_weight"],
+                   rebalance=params["rebalance"], start=params["start"], end=params["end"])
 
 
 @st.cache_data(show_spinner=False)
@@ -54,10 +60,11 @@ with st.sidebar:
     st.header("1 · Pick your assets")
     preset = st.selectbox("Start from a ready-made portfolio", ["Custom"] + list(PRESETS), index=1)
     base = PRESETS.get(preset, PRESETS["Vanguard core (60/30/10)"])
+    defaults = PRESET_SETTINGS.get(preset, {})
 
     chosen = st.multiselect(
         "Assets (type to search: stocks, bonds, crypto)",
-        options=list(CATALOG),
+        options=list(dict.fromkeys(list(CATALOG) + list(base))),
         default=[t for t in base if t in CATALOG],
         format_func=label,
         key=f"assets::{preset}",
@@ -81,10 +88,19 @@ with st.sidebar:
     st.caption(f"Total: {total:.1f}%" + ("" if abs(total - 100) < 0.05 else " (will be scaled to 100%)"))
 
     st.header("3 · Settings")
-    start = st.date_input("Start date", dt.date(2021, 1, 1), min_value=dt.date(2000, 1, 1),
-                          max_value=dt.date.today() - dt.timedelta(days=30))
-    bench_opts = ["None"] + list(dict.fromkeys(["VOO", "VTI", "QQQ", "BTC-USD"] + tickers))
-    benchmark = st.selectbox("Benchmark (for beta)", bench_opts, index=1)
+    start = st.date_input("Start date (the day you bought)",
+                          dt.date.fromisoformat(defaults.get("start", "2021-01-01")),
+                          min_value=dt.date(2000, 1, 1), max_value=dt.date.today() - dt.timedelta(days=30),
+                          key=f"start::{preset}")
+    end = st.date_input("End date", dt.date.today(), min_value=dt.date(2000, 2, 1), max_value=dt.date.today(),
+                        key=f"end::{preset}")
+    reb_keys = list(REBALANCE)
+    rebalance = st.selectbox("Rebalancing", reb_keys, index=reb_keys.index(defaults.get("rebalance", "daily")),
+                             format_func=REBALANCE.get, key=f"reb::{preset}",
+                             help="'Never' = buy once and hold, like a brokerage account or a Bloomberg shares portfolio.")
+    bench_opts = ["None"] + list(dict.fromkeys(["VOO", "IVV", "VTI", "QQQ", "BTC-USD"] + tickers))
+    benchmark = st.selectbox("Benchmark (to compare against)", bench_opts,
+                             index=bench_opts.index(defaults.get("benchmark", "VOO")), key=f"bench::{preset}")
     with st.expander("More settings"):
         rf = st.number_input("Risk-free rate (% per year)", 0.0, 20.0, 4.0, 0.25,
                              help="Use the current 3-month Treasury bill yield.") / 100
@@ -102,7 +118,7 @@ if go:
         st.sidebar.error("Give at least one asset a weight above 0.")
     else:
         st.session_state.params = {
-            "weights": weights, "start": str(start), "rf": rf, "value": value, "var_level": var_level,
+            "weights": weights, "start": str(start), "end": str(end), "rebalance": rebalance, "rf": rf, "value": value, "var_level": var_level,
             "max_weight": max_weight, "benchmark": None if benchmark == "None" else benchmark,
         }
 
@@ -129,7 +145,7 @@ p, rk = a.summary.loc["Portfolio"], a.risk.loc["Portfolio"]
 # ---- Summary (top of page)
 st.header("Summary")
 c = st.columns(5)
-c[0].metric("Annual return", f"{p['Annual Return']:.1%}")
+c[0].metric("Total return", f"{p['Total Return']:.1%}", f"{p['Annual Return']:.1%} a year", delta_color="off")
 c[1].metric("Sharpe ratio", f"{p['Sharpe']:.2f}")
 c[2].metric("Volatility", f"{p['Volatility']:.1%}")
 c[3].metric("Max drawdown", f"{p['Max Drawdown']:.1%}")
@@ -145,9 +161,13 @@ tab_perf, tab_risk, tab_opt, tab_corr, tab_data = st.tabs(
 
 with tab_perf:
     st.subheader("Return & risk by asset")
-    st.dataframe(a.summary.style.format({"Annual Return": PCT, "Volatility": PCT, "Max Drawdown": PCT,
+    st.dataframe(a.summary.style.format({"Total Return": PCT, "Annual Return": PCT, "Volatility": PCT, "Max Drawdown": PCT,
                                          "Sharpe": NUM, "Sortino": NUM, "Beta": NUM, "Calmar": NUM}))
     show(plots.growth_and_drawdown(a.returns, a.value))
+    if a.current_weights is not None:
+        st.subheader("How your weights drifted")
+        drift = pd.DataFrame({"Starting weight": a.weights, "Weight now": a.current_weights})
+        st.dataframe(drift.sort_values("Weight now", ascending=False).style.format(PCT))
     show(plots.rolling_sharpe_chart(a.returns["Portfolio"], a.risk_free, a.periods))
     with st.expander("What do these mean?"):
         st.markdown(
@@ -182,7 +202,9 @@ with tab_opt:
         st.dataframe(a.optimal_stats.style.format({"Avg Return": PCT, "Volatility": PCT, "Sharpe": NUM}))
         show(plots.efficient_frontier(a.frontier, a.optimal_stats))
         show(plots.weights_chart(a.optimal))
-        st.caption("⭐ Max Sharpe = best return per unit of risk over this period. ◆ Min Volatility = "
+        st.caption("These stats assume each mix is held at fixed weights (rebalanced daily), so 'Your weights' "
+                   "here can differ from the Summary if you chose another rebalancing setting. "
+                   "⭐ Max Sharpe = best return per unit of risk over this period. ◆ Min Volatility = "
                    "smoothest ride. These are based on past prices, not a forecast. Use the "
                    "'max % in any one asset' setting to keep the mix diversified.")
 

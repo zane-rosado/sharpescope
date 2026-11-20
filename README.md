@@ -19,6 +19,8 @@ A free, open-source tool that measures the **risk and return of any stock, ETF o
 | **Efficient frontier** | Thousands of possible mixes plotted, with your portfolio and the optimal ones marked |
 | **Crypto** | BTC, ETH, XRP, SOL, BNB, ADA, DOGE, AVAX, LINK, LTC built in, mixed correctly with stocks |
 | **PDF report** | One click: summary, all tables and all charts, ready to print or email |
+| **Rebalancing** | Daily, monthly, quarterly, yearly, or never (buy and hold, like a brokerage or Bloomberg shares portfolio) |
+| **Benchmark comparison** | Your total return vs. the benchmark (e.g. IVV), in percentage points |
 | **Presets** | Vanguard core 60/30/10, classic 60/40, three-fund, crypto majors, stocks + 10% crypto |
 
 ![Efficient frontier](examples/sample_frontier.png)
@@ -38,7 +40,12 @@ The app opens in your browser. Pick a preset or your own assets, set weights, an
 py -m portfolio_analyzer.cli VOO VXUS BND --weights 0.6 0.3 0.1 --benchmark VOO
 py -m portfolio_analyzer.cli --preset "Crypto majors" --pdf crypto_report.pdf
 py -m portfolio_analyzer.cli VOO BND BTC-USD --max-weight 0.5 --var-level 0.99
+py -m portfolio_analyzer.cli --preset "SMIF_ZR - Project 2 stocks" --start 2025-12-31 --rebalance none --benchmark IVV
 ```
+
+### Checked against Bloomberg
+
+For the 20-stock SMIF_ZR portfolio (buy and hold from 12/31/25 to 10/30/26), the tool gives a total return of **44.90%** vs. Bloomberg PORT's **44.84%**, and **11.75%** for IVV in both. The fixed-weight sector portfolio matches Bloomberg exactly (26.54%). Small gaps come from Yahoo vs. Bloomberg dividend timing.
 
 Run `py -m portfolio_analyzer.cli --help` to see every option.
 
@@ -86,14 +93,13 @@ portfolio_analyzer/
   report.py     # PDF report
   cli.py        # command line
 app.py          # Streamlit web app
-tests/          # 29 tests, run automatically on every change by GitHub Actions
+tests/          # 33 tests, run automatically on every change by GitHub Actions
 ```
 
 **Adding things:** new asset to the picker: one line in `universe.CATALOG`. New preset: one entry in `universe.PRESETS`. New metric: add it in `analysis.analyze()` and it appears in the app, CLI and PDF.
 
 ## Roadmap
 
-- [ ] Rebalancing frequency options (monthly, quarterly, none)
 - [ ] Monte Carlo simulation of future portfolio value
 - [ ] Stress tests (2008, 2020, 2022 drawdowns)
 - [ ] Factor exposure (market, size, value)
