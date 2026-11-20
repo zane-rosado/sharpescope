@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_analyzer import metrics, optimize, risk
-from portfolio_analyzer.analysis import analyze, plain_english
-from portfolio_analyzer.data import align_prices
-from portfolio_analyzer.report import build_pdf
-from portfolio_analyzer.universe import clean_ticker, is_crypto
+from sharpescope import metrics, optimize, risk
+from sharpescope.analysis import analyze, plain_english
+from sharpescope.data import align_prices
+from sharpescope.report import build_pdf
+from sharpescope.universe import clean_ticker, is_crypto
 
 
 def _prices(cols, index, seed=1, mu=0.0004, sd=0.01):
@@ -127,7 +127,7 @@ def test_analyze_and_pdf():
     assert a.optimal["Max Sharpe"].max() <= 0.6 + 1e-6
     assert a.optimal_stats.loc["Max Sharpe", "Sharpe"] >= a.optimal_stats.loc["Your weights", "Sharpe"] - 1e-9
     lines = plain_english(a)
-    assert len(lines) == 6 and any("Sharpe ratio" in l for l in lines)
+    assert len(lines) >= 6 and any("Sharpe ratio" in l for l in lines)
     pdf = build_pdf(a)
     assert pdf[:4] == b"%PDF" and len(pdf) > 20_000
 

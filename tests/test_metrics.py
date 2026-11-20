@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_analyzer import metrics
+from sharpescope import metrics
 
 
 @pytest.fixture
