@@ -100,7 +100,7 @@ def test_mixed_portfolio_uses_stock_days():
     stocks = _prices(["VOO"], pd.bdate_range("2024-01-01", days[-1]))
     aligned, periods, notes = align_prices(pd.concat([stocks, crypto], axis=1, sort=True))
     assert periods == 252
-    assert aligned.index.dayofweek.max() <= 4  # no weekends
+    assert aligned.index.day_of_week.max() <= 4  # no weekends
     assert not aligned.isna().any().any()
     assert any("crypto" in n.lower() for n in notes)
 
